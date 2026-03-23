@@ -1,5 +1,4 @@
 #include <Windows.h>
-#include <minwinbase.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -18,10 +17,15 @@
 #define DATE_BUFFER_SIZE 20
 #define OPTION_BUFFER_SIZE 10
 #define DATA_ARRAY_SIZE 10000
+#define MAX_PRINT_LENGTH 50
+#define PATH_BUFFER_SIZE (MAX_PATH + 1)
 
 #define CREATED_AFTER 1
 #define CREATED_BEFORE -1
 #define CREATED_ON_DATE 0
+
+#define MAX(a,b) (((a) > (b)) ? (a) : (b))
+#define MIN(a,b) (((a) < (b)) ? (a) : (b))
 
 typedef struct
 {
@@ -36,14 +40,20 @@ typedef struct
     SYSTEMTIME time;
 } fileInfo;
 
+typedef struct
+{
+    char sourceFileName[PATH_BUFFER_SIZE];
+    char destinationFileName[PATH_BUFFER_SIZE];
+} copyFileNames;
+
 i8 validateDate(char *date, dateStruct *dateBuffer);
-inline void removeLineFeed(char *input);
+inline void removeTrailingByte(char *input, char *byte);
 i8 validateFilterRange(dateStruct startDate, dateStruct endDate);
 i8 fileTimeFilter(dateStruct filterDate, SYSTEMTIME creationDate);
 i8 fileTimeCmp(SYSTEMTIME fileTime1, SYSTEMTIME fileTime2);
 void quicksort(fileInfo *array, i64 low, i64 high);
 i64 partition(fileInfo *array, i64 low, i64 high);
-void mergeDirFileName(char *buffer, char *directory, char *fileName);
+i8 mergeDirFileName(char *buffer, char *directory, char *fileName, u32 bufferSize);
 
 int main(int argc, char **argv)
 {
@@ -53,12 +63,12 @@ int main(int argc, char **argv)
         return -1;
     }
     char option[OPTION_BUFFER_SIZE] = {0};
-    char workingDirectory[MAX_PATH] = {0};
+    char workingDirectory[PATH_BUFFER_SIZE] = {0};
 
     do
     {
         printf("Welcome to backupUtil\n");
-        GetCurrentDirectoryA(MAX_PATH, workingDirectory);
+        GetCurrentDirectoryA(PATH_BUFFER_SIZE, workingDirectory);
         printf("Current working directory: %s\n", workingDirectory);
         printf("Select option:\n");
         printf("1: Copy to current working directory\n");
@@ -69,10 +79,12 @@ int main(int argc, char **argv)
     } while (strcmp(option, "1\n") && strcmp(option, "2\n") && strcmp(option, "3\n"));
 
     u8 selectDir = 1;
-    char sourceDirectory[MAX_PATH] = {0};
-    char destinationDirectory[MAX_PATH] = {0};
-    char selectDirOption[OPTION_BUFFER_SIZE] = {0};
 
+    char sourceDirectory[PATH_BUFFER_SIZE] = {0};
+    char destinationDirectory[PATH_BUFFER_SIZE] = {0};
+    char sourceDirectoryFilePath[PATH_BUFFER_SIZE] = {0};
+    char destinationDirectoryFilePath[PATH_BUFFER_SIZE] = {0};
+    char selectDirOption[OPTION_BUFFER_SIZE] = {0};
 
     fileInfo *fileData = (fileInfo *) HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(fileInfo) * DATA_ARRAY_SIZE);
     if (fileData == NULL)
@@ -88,21 +100,28 @@ int main(int argc, char **argv)
         {
             printf("Enter source directory:\n");
             fgets(sourceDirectory, sizeof(sourceDirectory), stdin);
-            removeLineFeed(sourceDirectory);
+            removeTrailingByte(sourceDirectory, "\n");
             printf("Is \"%s\" the source directory?\n", sourceDirectory);
             printf("Select Y/N:\n");
             fgets(selectDirOption, sizeof(selectDirOption), stdin);
             if (strcmp(selectDirOption, "Y\n") == 0 || strcmp(selectDirOption, "y\n") == 0) 
             {
-                strcat_s(sourceDirectory , MAX_PATH, "\\*");
-                fileHandle = FindFirstFileA(sourceDirectory, &(fileData->data));
-                if (fileHandle != INVALID_HANDLE_VALUE)
+                snprintf(sourceDirectoryFilePath, sizeof(sourceDirectoryFilePath), "%s\\%s", sourceDirectory, "*");
+                if (mergeDirFileName(sourceDirectoryFilePath, sourceDirectory, "*", sizeof(sourceDirectoryFilePath)) == 0)
                 {
-                    selectDir = 0;
+                    fileHandle = FindFirstFileA(sourceDirectoryFilePath, &(fileData->data));
+                    if (fileHandle != INVALID_HANDLE_VALUE)
+                    {
+                        selectDir = 0;
+                    }
+                    else 
+                    {
+                        printf("Invalid directory. Try again.\n");
+                    }
                 }
                 else 
                 {
-                    printf("Invalid directory. Try again.\n");
+                    printf("File path exceeds limit.\n");
                 }
             }
         }
@@ -114,23 +133,29 @@ int main(int argc, char **argv)
         {
             printf("Enter destination directory:\n");
             fgets(destinationDirectory, sizeof(destinationDirectory), stdin);
-            removeLineFeed(destinationDirectory);
+            removeTrailingByte(destinationDirectory, "\n");
             printf("Is \"%s\" the destination directory?\n", destinationDirectory);
             printf("Select Y/N:\n");
             fgets(selectDirOption, sizeof(selectDirOption), stdin);
             if (strcmp(selectDirOption, "Y\n") == 0 || strcmp(selectDirOption, "y\n") == 0) 
             {
-                strcat_s(sourceDirectory , MAX_PATH, "\\*");
-                WIN32_FIND_DATAA dummyData = {0};
-                fileHandle = FindFirstFileA(destinationDirectory, &dummyData);
-                if (fileHandle != INVALID_HANDLE_VALUE)
+                if (mergeDirFileName(sourceDirectoryFilePath, sourceDirectory, "*", sizeof(sourceDirectoryFilePath)) == 0)
                 {
-                    selectDir = 0;
-                    fileHandle = FindFirstFileA(sourceDirectory, &(fileData->data));
+                    WIN32_FIND_DATAA dummyData = {0};
+                    fileHandle = FindFirstFileA(sourceDirectoryFilePath, &dummyData);
+                    if (fileHandle != INVALID_HANDLE_VALUE)
+                    {
+                        selectDir = 0;
+                        fileHandle = FindFirstFileA(sourceDirectoryFilePath, &(fileData->data));
+                    }
+                    else 
+                    {
+                        printf("Invalid directory. Try again.\n");
+                    }
                 }
                 else 
                 {
-                    printf("Invalid directory. Try again.\n");
+                    printf("File path exceeds limit.\n");
                 }
             }
         }
@@ -162,6 +187,7 @@ int main(int argc, char **argv)
         fileData[i].time = time;
         printf("File name: %10s Date created: %d/%d/%d\n", fileData[i].data.cFileName, time.wDay, time.wMonth, time.wYear);
     }
+    printf("File count: %u\n", fileIndex);
 
     char startDate[DATE_BUFFER_SIZE] = {0};
     char endDate[DATE_BUFFER_SIZE] = {0};
@@ -175,14 +201,14 @@ int main(int argc, char **argv)
         {
             printf("Enter start date (DD/MM/YYYY):\n");
             fgets(startDate, sizeof(startDate), stdin);
-            removeLineFeed(startDate);
+            removeTrailingByte(startDate, "\n");
         } while(validateDate(startDate, &start) != 0);
 
         do
         {
             printf("Enter end date (DD/MM/YYYY):\n");
             fgets(endDate, sizeof(endDate), stdin);
-            removeLineFeed(endDate);
+            removeTrailingByte(endDate, "\n");
         } while (validateDate(endDate, &end) != 0);
         
         validRange = validateFilterRange(start, end);
@@ -192,7 +218,7 @@ int main(int argc, char **argv)
         }
     } while (!validRange);
 
-    fileInfo *filteredFileData = (fileInfo *) HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(fileInfo) * DATA_ARRAY_SIZE);
+    fileInfo *filteredFileData = (fileInfo *) HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(fileInfo) * fileIndex);
     if (filteredFileData == NULL)
     {
         return -1;
@@ -201,7 +227,7 @@ int main(int argc, char **argv)
     size_t filteredFileIndex = 0;
     for (u8 i = 0; i < fileIndex; ++i)
     {
-        if (fileTimeFilter(start, fileData[i].time) >=CREATED_ON_DATE && fileTimeFilter(end, fileData[i].time) <= CREATED_ON_DATE)
+        if (fileTimeFilter(start, fileData[i].time) >=CREATED_ON_DATE && fileTimeFilter(end, fileData[i].time) <= CREATED_ON_DATE && filteredFileIndex < fileIndex)
         {
             filteredFileData[filteredFileIndex] = fileData[i]; 
             ++filteredFileIndex;
@@ -211,20 +237,55 @@ int main(int argc, char **argv)
 
     quicksort(filteredFileData, 0, filteredFileIndex - 1);
 
-    for(u8 i = 0; i < filteredFileIndex; ++i)
+    for(u8 i = 0; i < MIN(filteredFileIndex, MAX_PRINT_LENGTH); ++i)
     {
         printf("File name: %10s Date created: %d/%d/%d\n", filteredFileData[i].data.cFileName, filteredFileData[i].time.wDay, filteredFileData[i].time.wMonth, filteredFileData[i].time.wYear);
     }
+
+    char *failedSourceFiles[50] = {0};
+    char *failedDestinationFiles[50] = {0};
+    u8 failedSourceCounter = 0;
+    u8 failedDestinationCounter = 0;
+    copyFileNames *successfulFiles =  (copyFileNames *) HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(copyFileNames) * filteredFileIndex);
+
     for (u8 i = 0; i < filteredFileIndex; ++i)
     {
-        char sourceFileBuffer[MAX_PATH] = {0};
-        char destinationFileBuffer[MAX_PATH] = {0};
+        char sourceFileBuffer[PATH_BUFFER_SIZE] = {0};
+        char destinationFileBuffer[PATH_BUFFER_SIZE] = {0};
+
+        if (mergeDirFileName(sourceFileBuffer, sourceDirectory, filteredFileData[i].data.cFileName,sizeof(sourceFileBuffer)))
+        {
+            if (failedSourceCounter < 50)
+            {
+                failedSourceFiles[failedSourceCounter++] = filteredFileData[i].data.cFileName;
+            }
+            else
+            {
+                printf("Too many source files failed to be opened. Program exiting\n");
+                return -1;
+            }
+        }
+        else if (mergeDirFileName(destinationFileBuffer, destinationDirectory, filteredFileData[i].data.cFileName, sizeof(destinationFileBuffer)))
+        {
+            if (failedDestinationCounter < 50)
+            {
+                failedDestinationFiles[failedDestinationCounter++] = filteredFileData[i].data.cFileName;
+            }
+            else
+            {
+                printf("Too many destination files failed to be created. Program exiting\n");
+                return -1;
+            }
+        }
+        else
+        {
+        }
     }
 }
 
-inline void removeLineFeed(char *input)
+inline void removeTrailingByte(char *input, char *byte)
 {
-    input[strcspn(input, "\n")] = 0;
+    input[strcspn(input, byte)] = 0;
 }
 
 i8 validateDate(char *date, dateStruct *dateBuffer)
@@ -392,6 +453,17 @@ i64 partition(fileInfo *array, i64 low, i64 high)
     return index;
 }
 
-void mergeDirFileName(char *buffer, char *directory, char *fileName)
+i8 mergeDirFileName(char *buffer, char *directory, char *fileName, u32 bufferSize)
 {
+    removeTrailingByte(directory, "*");
+
+    // 1 for inserting /
+    if (strlen(directory) + strlen(fileName) + 1 > MAX_PATH)
+    {
+        return -1;
+    }
+    
+    snprintf(buffer, bufferSize , "%s\\%s", directory, fileName);
+
+    return 0;
 }
