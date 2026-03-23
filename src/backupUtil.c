@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 #define u8 uint8_t
 #define u16 uint16_t
@@ -124,6 +123,10 @@ int main(int argc, char **argv)
                     printf("File path exceeds limit.\n");
                 }
             }
+            else if (strcmp(selectDirOption, "N\n") == 0 || strcmp(selectDirOption, "n\n") == 0)
+            {
+                return -1;
+            }
         }
     }
     else if(strcmp(option, "2\n") == 0)
@@ -158,6 +161,10 @@ int main(int argc, char **argv)
                     printf("File path exceeds limit.\n");
                 }
             }
+            else if (strcmp(selectDirOption, "N\n") == 0 || strcmp(selectDirOption, "n\n") == 0)
+            {
+                return -1;
+            }
         }
     }
     else
@@ -187,14 +194,14 @@ int main(int argc, char **argv)
         fileData[i].time = time;
         printf("File name: %10s Date created: %d/%d/%d\n", fileData[i].data.cFileName, time.wDay, time.wMonth, time.wYear);
     }
-    printf("File count: %u\n", fileIndex);
+    printf("File count: %llu\n", fileIndex);
 
     char startDate[DATE_BUFFER_SIZE] = {0};
     char endDate[DATE_BUFFER_SIZE] = {0};
     dateStruct start = {0};
     dateStruct end = {0};
 
-    bool validRange = false;
+    u8 validRange = 0;
     do
     {
         do
@@ -227,8 +234,10 @@ int main(int argc, char **argv)
     size_t filteredFileIndex = 0;
     for (u8 i = 0; i < fileIndex; ++i)
     {
-        if (fileTimeFilter(start, fileData[i].time) >=CREATED_ON_DATE && fileTimeFilter(end, fileData[i].time) <= CREATED_ON_DATE && filteredFileIndex < fileIndex)
+        if (fileTimeFilter(start, fileData[i].time) >= CREATED_ON_DATE && fileTimeFilter(end, fileData[i].time) <= CREATED_ON_DATE 
+                && filteredFileIndex < fileIndex && strcmp(fileData[i].data.cFileName, ".") && strcmp(fileData[i].data.cFileName, ".."))
         {
+            int test = strcmp(fileData[i].data.cFileName, ".");
             filteredFileData[filteredFileIndex] = fileData[i]; 
             ++filteredFileIndex;
         }
@@ -239,14 +248,17 @@ int main(int argc, char **argv)
 
     for(u8 i = 0; i < MIN(filteredFileIndex, MAX_PRINT_LENGTH); ++i)
     {
-        printf("File name: %10s Date created: %d/%d/%d\n", filteredFileData[i].data.cFileName, filteredFileData[i].time.wDay, filteredFileData[i].time.wMonth, filteredFileData[i].time.wYear);
+        printf("File name: %10s Date created: %d/%d/%d\n", filteredFileData[i].data.cFileName, filteredFileData[i].time.wDay, 
+                filteredFileData[i].time.wMonth, filteredFileData[i].time.wYear);
     }
 
     char *failedSourceFiles[50] = {0};
     char *failedDestinationFiles[50] = {0};
     u8 failedSourceCounter = 0;
     u8 failedDestinationCounter = 0;
+    u8 totalFailedCounter = 0;
     copyFileNames *successfulFiles =  (copyFileNames *) HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(copyFileNames) * filteredFileIndex);
+    size_t successfulFileCounter = 0;
 
     for (u8 i = 0; i < filteredFileIndex; ++i)
     {
@@ -258,6 +270,7 @@ int main(int argc, char **argv)
             if (failedSourceCounter < 50)
             {
                 failedSourceFiles[failedSourceCounter++] = filteredFileData[i].data.cFileName;
+                totalFailedCounter++;
             }
             else
             {
@@ -270,6 +283,7 @@ int main(int argc, char **argv)
             if (failedDestinationCounter < 50)
             {
                 failedDestinationFiles[failedDestinationCounter++] = filteredFileData[i].data.cFileName;
+                totalFailedCounter++;
             }
             else
             {
@@ -279,8 +293,43 @@ int main(int argc, char **argv)
         }
         else
         {
+            snprintf(successfulFiles[successfulFileCounter].sourceFileName, sizeof(successfulFiles[successfulFileCounter].sourceFileName), "%s", sourceFileBuffer);
+            snprintf(successfulFiles[successfulFileCounter].destinationFileName, sizeof(successfulFiles[successfulFileCounter].destinationFileName), 
+                    "%s", destinationFileBuffer);
+            successfulFileCounter++;
         }
     }
+    printf("%d files have failed.\n", totalFailedCounter);
+    printf("Total files found: %llu\n", successfulFileCounter);
+
+    char proceedOption[OPTION_BUFFER_SIZE] = {0};
+
+    do 
+    {
+    printf("Do you want to proceed?");
+    printf("Select Y/N:\n");
+    fgets(proceedOption, sizeof(proceedOption), stdin);
+    } while (strcmp(proceedOption, "Y\n") && strcmp(proceedOption, "y\n") && strcmp(proceedOption, "N\n") && strcmp(proceedOption, "n\n"));
+
+    if (strcmp(proceedOption, "N\n") == 0 || strcmp(proceedOption, "n\n") == 0)
+    {
+        return -1;
+    }
+
+    size_t copiedFileCounter = 0;
+    
+    for (u8 i = 0; i < successfulFileCounter; ++i)
+    {
+        if (!CopyFile(successfulFiles[i].sourceFileName, successfulFiles[i].destinationFileName, TRUE))
+        {
+            printf("Error copying %s.\n", (successfulFiles + i)->sourceFileName);
+        }
+        else 
+        {
+            copiedFileCounter++;
+        }
+    }
+    printf("Successfully copied %llu/%llu files.\n", copiedFileCounter, successfulFileCounter);
 }
 
 inline void removeTrailingByte(char *input, char *byte)
@@ -345,17 +394,17 @@ i8 validateFilterRange(dateStruct startDate, dateStruct endDate)
 {
     if (startDate.year < endDate.year)
     {
-        return true;
+        return 1;
     }
     else if (startDate.month < endDate.month)
     {
-        return true;
+        return 1;
     }
     else if (startDate.day <= endDate.day)
     {
-        return true;
+        return 1;
     }
-    return false;
+    return 0;
 }
 
 i8 fileTimeFilter(dateStruct filterDate, SYSTEMTIME creationDate)
