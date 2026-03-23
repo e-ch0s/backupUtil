@@ -1,4 +1,5 @@
 #include <Windows.h>
+#include <handleapi.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -17,7 +18,6 @@
 #define OPTION_BUFFER_SIZE 10
 #define DATA_ARRAY_SIZE 10000
 #define MAX_PRINT_LENGTH 50
-#define PATH_BUFFER_SIZE (MAX_PATH + 1)
 
 #define CREATED_AFTER 1
 #define CREATED_BEFORE -1
@@ -41,8 +41,8 @@ typedef struct
 
 typedef struct
 {
-    char sourceFileName[PATH_BUFFER_SIZE];
-    char destinationFileName[PATH_BUFFER_SIZE];
+    char sourceFileName[MAX_PATH];
+    char destinationFileName[MAX_PATH];
 } copyFileNames;
 
 i8 validateDate(char *date, dateStruct *dateBuffer);
@@ -62,12 +62,12 @@ int main(int argc, char **argv)
         return -1;
     }
     char option[OPTION_BUFFER_SIZE] = {0};
-    char workingDirectory[PATH_BUFFER_SIZE] = {0};
+    char workingDirectory[MAX_PATH] = {0};
 
     do
     {
         printf("Welcome to backupUtil\n");
-        GetCurrentDirectoryA(PATH_BUFFER_SIZE, workingDirectory);
+        GetCurrentDirectoryA(MAX_PATH, workingDirectory);
         printf("Current working directory: %s\n", workingDirectory);
         printf("Select option:\n");
         printf("1: Copy to current working directory\n");
@@ -79,10 +79,9 @@ int main(int argc, char **argv)
 
     u8 selectDir = 1;
 
-    char sourceDirectory[PATH_BUFFER_SIZE] = {0};
-    char destinationDirectory[PATH_BUFFER_SIZE] = {0};
-    char sourceDirectoryFilePath[PATH_BUFFER_SIZE] = {0};
-    char destinationDirectoryFilePath[PATH_BUFFER_SIZE] = {0};
+    char sourceDirectory[MAX_PATH] = {0};
+    char destinationDirectory[MAX_PATH] = {0};
+    char sourceDirectoryFilePath[MAX_PATH] = {0};
     char selectDirOption[OPTION_BUFFER_SIZE] = {0};
 
     fileInfo *fileData = (fileInfo *) HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(fileInfo) * DATA_ARRAY_SIZE);
@@ -90,7 +89,9 @@ int main(int argc, char **argv)
     {
         return -1;
     }
-    HANDLE fileHandle = NULL;
+    HANDLE sourceFileHandle = NULL;
+    HANDLE destinationFileHandle = NULL;
+    WIN32_FIND_DATAA dummyData = {0};
     
     if (strcmp(option, "1\n") == 0)
     {
@@ -105,17 +106,26 @@ int main(int argc, char **argv)
             fgets(selectDirOption, sizeof(selectDirOption), stdin);
             if (strcmp(selectDirOption, "Y\n") == 0 || strcmp(selectDirOption, "y\n") == 0) 
             {
-                snprintf(sourceDirectoryFilePath, sizeof(sourceDirectoryFilePath), "%s\\%s", sourceDirectory, "*");
-                if (mergeDirFileName(sourceDirectoryFilePath, sourceDirectory, "*", sizeof(sourceDirectoryFilePath)) == 0)
+                if (strcmp(destinationDirectory, sourceDirectory) == 0)
                 {
-                    fileHandle = FindFirstFileA(sourceDirectoryFilePath, &(fileData->data));
-                    if (fileHandle != INVALID_HANDLE_VALUE)
+                    printf("Source directory is the same as destination directory. Try again.\n");
+                }
+                else if (mergeDirFileName(sourceDirectoryFilePath, sourceDirectory, "*", sizeof(sourceDirectoryFilePath)) == 0)
+                {
+                    sourceFileHandle = FindFirstFileA(sourceDirectoryFilePath, &(fileData->data));
+                    destinationFileHandle = FindFirstFileA(destinationDirectory, &dummyData);
+                    if (sourceFileHandle != INVALID_HANDLE_VALUE && destinationFileHandle != INVALID_HANDLE_VALUE)
                     {
                         selectDir = 0;
                     }
-                    else 
+                    else if (sourceFileHandle == NULL)
                     {
-                        printf("Invalid directory. Try again.\n");
+                        printf("Invalid source directory. Try again.\n");
+                    }
+                    else if (destinationFileHandle == NULL)
+                    {
+                        printf("Invalid destination directory. System error. Exiting program.\n");
+                        return -1;
                     }
                 }
                 else 
@@ -142,18 +152,27 @@ int main(int argc, char **argv)
             fgets(selectDirOption, sizeof(selectDirOption), stdin);
             if (strcmp(selectDirOption, "Y\n") == 0 || strcmp(selectDirOption, "y\n") == 0) 
             {
-                if (mergeDirFileName(sourceDirectoryFilePath, sourceDirectory, "*", sizeof(sourceDirectoryFilePath)) == 0)
+                if (strcmp(destinationDirectory, sourceDirectory) == 0)
                 {
-                    WIN32_FIND_DATAA dummyData = {0};
-                    fileHandle = FindFirstFileA(sourceDirectoryFilePath, &dummyData);
-                    if (fileHandle != INVALID_HANDLE_VALUE)
+                    printf("Source directory is the same as destination directory. Try again.\n");
+                }
+                else if (mergeDirFileName(sourceDirectoryFilePath, sourceDirectory, "*", sizeof(sourceDirectoryFilePath)) == 0)
+                {
+                    destinationFileHandle = FindFirstFileA(destinationDirectory, &dummyData);
+                    sourceFileHandle = FindFirstFileA(sourceDirectoryFilePath, &(fileData->data));
+
+                    if (sourceFileHandle != INVALID_HANDLE_VALUE && destinationFileHandle != INVALID_HANDLE_VALUE)
                     {
                         selectDir = 0;
-                        fileHandle = FindFirstFileA(sourceDirectoryFilePath, &(fileData->data));
                     }
-                    else 
+                    else if (sourceFileHandle == NULL)
                     {
-                        printf("Invalid directory. Try again.\n");
+                        printf("Invalid source directory. System error. Exiting program.\n");
+                        return -1;
+                    }
+                    else if (destinationFileHandle == NULL)
+                    {
+                        printf("Invalid destination directory. Try again.\n");
                     }
                 }
                 else 
@@ -169,13 +188,57 @@ int main(int argc, char **argv)
     }
     else
     {
+        while (selectDir)
+        {
+            printf("Enter source directory:\n");
+            fgets(sourceDirectory, sizeof(sourceDirectory), stdin);
+            removeTrailingByte(sourceDirectory, "\n");
+            printf("Enter destination directory:\n");
+            fgets(destinationDirectory, sizeof(destinationDirectory), stdin);
+            removeTrailingByte(destinationDirectory, "\n");
+            printf("Is \"%s\" the source directory and \"%s\" the destination directory?\n", sourceDirectory, destinationDirectory);
+            printf("Select Y/N:\n");
+            fgets(selectDirOption, sizeof(selectDirOption), stdin);
+            if (strcmp(selectDirOption, "Y\n") == 0 || strcmp(selectDirOption, "y\n") == 0) 
+            {
+                if (strcmp(destinationDirectory, sourceDirectory) == 0)
+                {
+                    printf("Source directory is the same as destination directory. Try again.\n");
+                }
+                else if (mergeDirFileName(sourceDirectoryFilePath, sourceDirectory, "*", sizeof(sourceDirectoryFilePath)) == 0)
+                {
+                    destinationFileHandle = FindFirstFileA(destinationDirectory, &dummyData);
+                    sourceFileHandle = FindFirstFileA(sourceDirectoryFilePath, &(fileData->data));
+                    if (sourceFileHandle != INVALID_HANDLE_VALUE && destinationFileHandle != INVALID_HANDLE_VALUE)
+                    {
+                        selectDir = 0;
+                    }
+                    else if (sourceFileHandle == INVALID_HANDLE_VALUE)
+                    {
+                        printf("Invalid source directory. Try again.\n");
+                    }
+                    else if (destinationFileHandle == INVALID_HANDLE_VALUE)
+                    {
+                        printf("Invalid destination directory. Try again.\n");
+                    }
+                }
+                else 
+                {
+                    printf("File path exceeds limit.\n");
+                }
+            }
+            else if (strcmp(selectDirOption, "N\n") == 0 || strcmp(selectDirOption, "n\n") == 0)
+            {
+                return -1;
+            }
+        }
     }
 
     size_t fileIndex = 1;
 
-    while (FindNextFileA(fileHandle, &(fileData + fileIndex++)->data) != 0 && fileIndex < DATA_ARRAY_SIZE)
+    while (FindNextFileA(sourceFileHandle, &(fileData + fileIndex++)->data) != 0 && fileIndex < DATA_ARRAY_SIZE)
         ;
-    FindClose(fileHandle);
+    FindClose(sourceFileHandle);
 
     if (GetLastError() == ERROR_NO_MORE_FILES)
     {
@@ -201,7 +264,7 @@ int main(int argc, char **argv)
     dateStruct start = {0};
     dateStruct end = {0};
 
-    u8 validRange = 0;
+    i8 validRange = 0;
     do
     {
         do
@@ -262,8 +325,8 @@ int main(int argc, char **argv)
 
     for (u8 i = 0; i < filteredFileIndex; ++i)
     {
-        char sourceFileBuffer[PATH_BUFFER_SIZE] = {0};
-        char destinationFileBuffer[PATH_BUFFER_SIZE] = {0};
+        char sourceFileBuffer[MAX_PATH] = {0};
+        char destinationFileBuffer[MAX_PATH] = {0};
 
         if (mergeDirFileName(sourceFileBuffer, sourceDirectory, filteredFileData[i].data.cFileName,sizeof(sourceFileBuffer)))
         {
