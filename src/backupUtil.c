@@ -1,10 +1,7 @@
 #include <Windows.h>
-#include <handleapi.h>
-#include <minwindef.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-#include <winerror.h>
 
 #define u8 uint8_t
 #define u16 uint16_t
@@ -20,6 +17,7 @@
 #define OPTION_BUFFER_SIZE 10
 #define DATA_ARRAY_SIZE 10000
 #define MAX_PRINT_LENGTH 50
+#define QUEUE_SIZE 500
 
 #define CREATED_AFTER 1
 #define CREATED_BEFORE -1
@@ -56,6 +54,8 @@ void quicksort(fileInfo *array, i64 low, i64 high);
 i64 partition(fileInfo *array, i64 low, i64 high);
 i8 mergeDirFileName(char *buffer, char *directory, char *fileName, u32 bufferSize);
 i8 GetDirFromFilePath(char *buffer, char *filePath);
+void logger(HANDLE logFileHandle, HANDLE heapHandle, char *message);
+void printLogLine(HANDLE logFileHandle);
 
 int main(int argc, char **argv)
 {
@@ -81,17 +81,23 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    HANDLE logHandle = CreateFileA(logFilePath, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL); 
-    if ( logHandle == INVALID_HANDLE_VALUE)
+    HANDLE logHandle = CreateFileA(logFilePath, FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL); 
+    if (logHandle == INVALID_HANDLE_VALUE)
     {
         printf("Error opening log file. Exiting program.\n");
         return -1;
     }
-    char *msg = "testing testing 123";
-    DWORD bytesWritten = 0;
-    WriteFile(logHandle, msg, strlen(msg), &bytesWritten, NULL);
+    if (GetLastError() == 0)
+    {
+        char logTitle[344] = {0};
+        snprintf(logTitle, sizeof(logTitle), "|%-40s|%-10s|%-10s|%-20s|%-256s|\n", "ERROR DESCRIPTION", "DATE", "TIME", "FILE NAME", "DIRECTORY");
+        DWORD logBytesWritten = 0;
+        WriteFile(logHandle, logTitle, strlen(logTitle), &logBytesWritten, NULL);
+        printLogLine(logHandle);
+    }
 
     HANDLE heapHandle = GetProcessHeap();
+
     if (heapHandle == NULL)
     {
         return -1;
@@ -436,8 +442,13 @@ int main(int argc, char **argv)
 
 inline i8 removeTrailingByte(char *input, char *byte)
 {
+    if (strlen(input) <=0)
+    {
+        return -1;
+    }
+
     size_t index = 0;
-    if ((index = strcspn(input, byte)) == (strlen(input) - 2))
+    if ((index = strcspn(input, byte)) == (strlen(input) - 1))
     {
         input[strcspn(input, byte)] = 0;
         return 0;
@@ -648,4 +659,90 @@ i8 GetDirFromFilePath(char *buffer, char *filePath)
         snprintf(buffer, index + 2, "%s", filePath);
     }
     return 0;
+}
+
+// tokenize the strings so i can print them on multiple lines
+void logger(HANDLE logFileHandle, HANDLE heapHandle, char *message)
+{
+    char lineBuffer[41] = {0};
+    char *stringQueue[QUEUE_SIZE] = {0};
+    char *tokens = HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(char) * 10000); 
+    u16 numTokens = 0;
+    u16 tokenArenaIndex = 0;
+    u16 startOfTokenIndex = 0;
+
+    for (u16 i = 0; i <= strlen(message); ++i)
+    {
+        if (message[i] == ' ' || message[i] == '\0')
+        {
+            snprintf(&tokens[tokenArenaIndex], (i - startOfTokenIndex + 1), "%s", &message[startOfTokenIndex]);
+            stringQueue[numTokens] = &tokens[tokenArenaIndex];
+            tokenArenaIndex += (i - startOfTokenIndex + 2);
+            startOfTokenIndex = ++i;
+            ++numTokens;
+        }
+    }
+
+    u16 numTokensPrinted = 0;
+    u8 firstLine = 1;
+
+    while (numTokensPrinted != numTokens)
+    {
+        memset(lineBuffer, 0, 41);
+        u16 totalLength = strlen(stringQueue[numTokensPrinted]);
+        u16 i = 1;
+        while (totalLength < sizeof(lineBuffer) && (numTokensPrinted + i) < numTokens)
+        {
+            totalLength += strlen(stringQueue[numTokensPrinted + i]) + 1;
+            ++i;
+        }
+        if ((numTokensPrinted + i) < numTokens)
+        {
+            --i;
+            totalLength -= strlen(stringQueue[numTokensPrinted + i]) + 1;
+        }
+
+        u8 lineBufferIndex = 0;
+        for (u16 j = 0; j < i; ++j)
+        {
+            for (u8 l = 0; l < strlen(stringQueue[numTokensPrinted + j]); ++l)
+            {
+                lineBuffer[lineBufferIndex++] = stringQueue[numTokensPrinted + j][l];
+            }   
+            if ((numTokensPrinted + j) != (numTokens - 1))
+            {
+                lineBuffer[lineBufferIndex++] = ' ';
+            }
+        }
+        numTokensPrinted += i;
+        char logText[344] = {0};
+        if (firstLine)
+        {
+            snprintf(logText, sizeof(logText), "|%-40s|%-10s|%-10s|%-20s|%-256s|\n", lineBuffer, "DATE", "TIME", "FILE NAME", "DIRECTORY");
+            DWORD logBytesWritten = 0;
+            WriteFile(logFileHandle, logText, strlen(logText), &logBytesWritten, NULL);
+            firstLine = 0;
+        }
+        else
+        {
+            snprintf(logText, sizeof(logText), "|%-40s|%-10s|%-10s|%-20s|%-256s|\n", lineBuffer, "", "", "", "");
+            DWORD logBytesWritten = 0;
+            WriteFile(logFileHandle, logText, strlen(logText), &logBytesWritten, NULL);
+        }
+
+    }
+    printLogLine(logFileHandle);
+    HeapFree(heapHandle, 0, tokens);
+}
+
+
+void printLogLine(HANDLE logFileHandle)
+{
+    char lineArray[344] = {0};
+    memset(lineArray, '-', 344);
+    DWORD bytesWritten = 0;
+    lineArray[sizeof(lineArray) - 2] = '\n';
+    lineArray[sizeof(lineArray) - 1] = '\0';
+    WriteFile(logFileHandle, lineArray, strlen(lineArray), &bytesWritten, NULL);
+    return;
 }
