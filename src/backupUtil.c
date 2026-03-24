@@ -18,6 +18,7 @@
 #define DATA_ARRAY_SIZE 10000
 #define MAX_PRINT_LENGTH 50
 #define QUEUE_SIZE 500
+#define MESSAGE_BUFFER_SIZE 500
 
 #define CREATED_AFTER 1
 #define CREATED_BEFORE -1
@@ -33,6 +34,12 @@ typedef struct
     u16 year;
 } dateStruct;
 
+typedef struct
+{
+    u8 hour;
+    u8 minutes;
+} timeStruct;
+
 typedef struct 
 {
     WIN32_FIND_DATAA data;
@@ -45,6 +52,14 @@ typedef struct
     char destinationFileName[MAX_PATH];
 } copyFileNames;
 
+typedef struct
+{
+    char *message;
+    char *directory;
+    char *fileName;
+    SYSTEMTIME time;
+} logInfo;
+
 i8 validateDate(char *date, dateStruct *dateBuffer);
 inline i8 removeTrailingByte(char *input, char *byte);
 i8 validateFilterRange(dateStruct startDate, dateStruct endDate);
@@ -54,8 +69,9 @@ void quicksort(fileInfo *array, i64 low, i64 high);
 i64 partition(fileInfo *array, i64 low, i64 high);
 i8 mergeDirFileName(char *buffer, char *directory, char *fileName, u32 bufferSize);
 i8 GetDirFromFilePath(char *buffer, char *filePath);
-void logger(HANDLE logFileHandle, HANDLE heapHandle, char *message);
+void logger(HANDLE logFileHandle, HANDLE heapHandle, logInfo *info);
 void printLogLine(HANDLE logFileHandle);
+logInfo createLogInfo(char *message, char *directory, char *fileName);
 
 int main(int argc, char **argv)
 {
@@ -100,6 +116,7 @@ int main(int argc, char **argv)
 
     if (heapHandle == NULL)
     {
+        printf("Failed to get process heap.\n");
         return -1;
     }
     char option[OPTION_BUFFER_SIZE] = {0};
@@ -128,6 +145,8 @@ int main(int argc, char **argv)
     fileInfo *fileData = (fileInfo *) HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(fileInfo) * DATA_ARRAY_SIZE);
     if (fileData == NULL)
     {
+        logInfo info = createLogInfo("Failed to allocate file data memory arena.", "-", "-");
+        logger(logHandle, heapHandle, &info); 
         return -1;
     }
     HANDLE sourceFileHandle = NULL;
@@ -165,6 +184,8 @@ int main(int argc, char **argv)
                     }
                     else if (destinationFileHandle == NULL)
                     {
+                        logInfo info = createLogInfo("System provided invalid destination directory. Exited program.", destinationDirectory, "-");
+                        logger(logHandle, heapHandle, &info);
                         printf("Invalid destination directory. System error. Exiting program.\n");
                         return -1;
                     }
@@ -208,6 +229,8 @@ int main(int argc, char **argv)
                     }
                     else if (sourceFileHandle == NULL)
                     {
+                        logInfo info = createLogInfo("System provided invalid source directory. Exiting program.", sourceDirectory, "-");
+                        logger(logHandle, heapHandle, &info);
                         printf("Invalid source directory. System error. Exiting program.\n");
                         return -1;
                     }
@@ -332,6 +355,8 @@ int main(int argc, char **argv)
     fileInfo *filteredFileData = (fileInfo *) HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(fileInfo) * fileIndex);
     if (filteredFileData == NULL)
     {
+        logInfo info = createLogInfo("Failed to allocate memory arena for filtered file data. Exiting program", "-", "-");
+        logger(logHandle, heapHandle, &info);
         return -1;
     }
 
@@ -375,10 +400,19 @@ int main(int argc, char **argv)
             {
                 failedSourceFiles[failedSourceCounter++] = filteredFileData[i].data.cFileName;
                 totalFailedCounter++;
+                char errorMessageBuffer[MESSAGE_BUFFER_SIZE] = {0};
+                logInfo info;
+                GetLocalTime(&info.time);
+                snprintf(errorMessageBuffer, sizeof(errorMessageBuffer), "%s %s", filteredFileData[i].data.cFileName, "could not be accessed.");
+                info.message = errorMessageBuffer;
+                info.directory = sourceDirectory;
+                info.fileName = filteredFileData[i].data.cFileName;
+                
+                logger(logHandle, heapHandle, &info);
             }
             else
             {
-                printf("Too many source files failed to be opened. Program exiting\n");
+                printf("Too many source files failed to be accesssed. Program exiting\n");
                 return -1;
             }
         }
@@ -662,7 +696,7 @@ i8 GetDirFromFilePath(char *buffer, char *filePath)
 }
 
 // tokenize the strings so i can print them on multiple lines
-void logger(HANDLE logFileHandle, HANDLE heapHandle, char *message)
+void logger(HANDLE logFileHandle, HANDLE heapHandle, logInfo *info)
 {
     char lineBuffer[41] = {0};
     char *stringQueue[QUEUE_SIZE] = {0};
@@ -671,11 +705,11 @@ void logger(HANDLE logFileHandle, HANDLE heapHandle, char *message)
     u16 tokenArenaIndex = 0;
     u16 startOfTokenIndex = 0;
 
-    for (u16 i = 0; i <= strlen(message); ++i)
+    for (u16 i = 0; i <= strlen(info->message); ++i)
     {
-        if (message[i] == ' ' || message[i] == '\0')
+        if (info->message[i] == ' ' || info->message[i] == '\0')
         {
-            snprintf(&tokens[tokenArenaIndex], (i - startOfTokenIndex + 1), "%s", &message[startOfTokenIndex]);
+            snprintf(&tokens[tokenArenaIndex], (i - startOfTokenIndex + 1), "%s", &info->message[startOfTokenIndex]);
             stringQueue[numTokens] = &tokens[tokenArenaIndex];
             tokenArenaIndex += (i - startOfTokenIndex + 2);
             startOfTokenIndex = ++i;
@@ -718,7 +752,9 @@ void logger(HANDLE logFileHandle, HANDLE heapHandle, char *message)
         char logText[344] = {0};
         if (firstLine)
         {
-            snprintf(logText, sizeof(logText), "|%-40s|%-10s|%-10s|%-20s|%-256s|\n", lineBuffer, "DATE", "TIME", "FILE NAME", "DIRECTORY");
+            char dateBuffer[DATE_BUFFER_SIZE] = {0}; 
+            snprintf(logText, sizeof(logText), "|%-40s|%2d/%2d/%4d|%2d:%-7d|%-20s|%-256s|\n", lineBuffer, info->time.wDay, info->time.wMonth, info->time.wYear, info->time.wHour, 
+                    info->time.wMinute, info->fileName, info->directory);
             DWORD logBytesWritten = 0;
             WriteFile(logFileHandle, logText, strlen(logText), &logBytesWritten, NULL);
             firstLine = 0;
@@ -745,4 +781,14 @@ void printLogLine(HANDLE logFileHandle)
     lineArray[sizeof(lineArray) - 1] = '\0';
     WriteFile(logFileHandle, lineArray, strlen(lineArray), &bytesWritten, NULL);
     return;
+}
+
+logInfo createLogInfo(char *message, char *directory, char *fileName)
+{
+    logInfo info = {0};
+    info.message = message;
+    info.directory = directory;
+    info.fileName = fileName;
+    GetLocalTime(&info.time);
+    return info;
 }
