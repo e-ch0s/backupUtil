@@ -1,8 +1,10 @@
 #include <Windows.h>
 #include <handleapi.h>
+#include <minwindef.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <winerror.h>
 
 #define u8 uint8_t
 #define u16 uint16_t
@@ -46,16 +48,49 @@ typedef struct
 } copyFileNames;
 
 i8 validateDate(char *date, dateStruct *dateBuffer);
-inline void removeTrailingByte(char *input, char *byte);
+inline i8 removeTrailingByte(char *input, char *byte);
 i8 validateFilterRange(dateStruct startDate, dateStruct endDate);
 i8 fileTimeFilter(dateStruct filterDate, SYSTEMTIME creationDate);
 i8 fileTimeCmp(SYSTEMTIME fileTime1, SYSTEMTIME fileTime2);
 void quicksort(fileInfo *array, i64 low, i64 high);
 i64 partition(fileInfo *array, i64 low, i64 high);
 i8 mergeDirFileName(char *buffer, char *directory, char *fileName, u32 bufferSize);
+i8 GetDirFromFilePath(char *buffer, char *filePath);
 
 int main(int argc, char **argv)
 {
+    char executableFilePath[MAX_PATH] = {0};
+    char executableFileDirectory[MAX_PATH] = {0};
+    char logFilePath[MAX_PATH] = {0};
+
+    if (GetModuleFileNameA(NULL, executableFilePath, sizeof(executableFilePath)) == 0)
+    {
+        printf("Error loading executable. Exiting program.\n");
+        return -1;
+    }
+    else if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+    {
+        printf("Error loading executable. Insufficient buffer. Exiting program.\n");
+        return -1;
+    }
+
+    GetDirFromFilePath(executableFileDirectory, executableFilePath);
+    if (mergeDirFileName(logFilePath, executableFileDirectory, "log.txt", sizeof(logFilePath)) != 0)
+    {
+        printf("Error opening logger. Exiting program.\n");
+        return -1;
+    }
+
+    HANDLE logHandle = CreateFileA(logFilePath, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL); 
+    if ( logHandle == INVALID_HANDLE_VALUE)
+    {
+        printf("Error opening log file. Exiting program.\n");
+        return -1;
+    }
+    char *msg = "testing testing 123";
+    DWORD bytesWritten = 0;
+    WriteFile(logHandle, msg, strlen(msg), &bytesWritten, NULL);
+
     HANDLE heapHandle = GetProcessHeap();
     if (heapHandle == NULL)
     {
@@ -385,6 +420,10 @@ int main(int argc, char **argv)
     {
         if (!CopyFile(successfulFiles[i].sourceFileName, successfulFiles[i].destinationFileName, TRUE))
         {
+            if (GetLastError() == ERROR_FILE_EXISTS)
+            {
+                printf("File exists. ");
+            }
             printf("Error copying %s.\n", (successfulFiles + i)->sourceFileName);
         }
         else 
@@ -395,9 +434,16 @@ int main(int argc, char **argv)
     printf("Successfully copied %llu/%llu files.\n", copiedFileCounter, successfulFileCounter);
 }
 
-inline void removeTrailingByte(char *input, char *byte)
+inline i8 removeTrailingByte(char *input, char *byte)
 {
-    input[strcspn(input, byte)] = 0;
+    size_t index = 0;
+    if ((index = strcspn(input, byte)) == (strlen(input) - 2))
+    {
+        input[strcspn(input, byte)] = 0;
+        return 0;
+    }
+
+    return -1;
 }
 
 i8 validateDate(char *date, dateStruct *dateBuffer)
@@ -567,8 +613,6 @@ i64 partition(fileInfo *array, i64 low, i64 high)
 
 i8 mergeDirFileName(char *buffer, char *directory, char *fileName, u32 bufferSize)
 {
-    removeTrailingByte(directory, "*");
-
     // 1 for inserting /
     if (strlen(directory) + strlen(fileName) + 1 > MAX_PATH)
     {
@@ -577,5 +621,31 @@ i8 mergeDirFileName(char *buffer, char *directory, char *fileName, u32 bufferSiz
     
     snprintf(buffer, bufferSize , "%s\\%s", directory, fileName);
 
+    return 0;
+}
+
+i8 GetDirFromFilePath(char *buffer, char *filePath)
+{
+    if (strlen(filePath) < 3)
+    {
+        return -1;
+    }
+    size_t index = strlen(filePath) - 1;
+    while (filePath[index--] != '\\' && index >= 3) 
+        ;
+    if (index < 1)
+    {
+        return -1;
+    }
+    if (index == 1)
+    {
+        // + 3 only if the directory is the root drive
+        snprintf(buffer, index + 3, "%s", filePath);
+    }
+    else
+    {
+        // + 2 beacuse converting from length to index and including the null terminator
+        snprintf(buffer, index + 2, "%s", filePath);
+    }
     return 0;
 }
