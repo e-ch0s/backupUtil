@@ -13,12 +13,19 @@
 #define i32 int32_t
 #define i64 int64_t
 
-#define DATE_BUFFER_SIZE 20
-#define OPTION_BUFFER_SIZE 10
+#define DATE_BUFFER_SIZE 12
+#define OPTION_BUFFER_SIZE 3
 #define DATA_ARRAY_SIZE 10000
 #define MAX_PRINT_LENGTH 50
 #define QUEUE_SIZE 500
 #define MESSAGE_BUFFER_SIZE 500
+#define LOG_PRINT_BUFFER_SIZE 359
+#define TIME_BUFFER_SIZE 6
+#define DAY_DATE_BUFFER_SIZE 3
+#define MONTH_DATE_BUFFER_SIZE 3
+#define YEAR_DATE_BUFFER_SIZE 5
+#define HOUR_BUFFER_SIZE 3
+#define MINUTE_BUFFER_SIZE 3
 
 #define CREATED_AFTER 1
 #define CREATED_BEFORE -1
@@ -48,8 +55,8 @@ typedef struct
 
 typedef struct
 {
-    char sourceFileName[MAX_PATH];
-    char destinationFileName[MAX_PATH];
+    char sourceFilePath[MAX_PATH];
+    char destinationFilePath[MAX_PATH];
 } copyFileNames;
 
 typedef struct
@@ -60,6 +67,7 @@ typedef struct
     SYSTEMTIME time;
 } logInfo;
 
+i8 clearStdin(char *buffer, size_t bufferSize);
 i8 validateDate(char *date, dateStruct *dateBuffer);
 inline i8 removeTrailingByte(char *input, char *byte);
 i8 validateFilterRange(dateStruct startDate, dateStruct endDate);
@@ -68,10 +76,11 @@ i8 fileTimeCmp(SYSTEMTIME fileTime1, SYSTEMTIME fileTime2);
 void quicksort(fileInfo *array, i64 low, i64 high);
 i64 partition(fileInfo *array, i64 low, i64 high);
 i8 mergeDirFileName(char *buffer, char *directory, char *fileName, u32 bufferSize);
-i8 GetDirFromFilePath(char *buffer, char *filePath);
+i8 GetDirFromFilePath(char *buffer, char *filePath, size_t bufferSize);
 void logger(HANDLE logFileHandle, HANDLE heapHandle, logInfo *info);
 void printLogLine(HANDLE logFileHandle);
 logInfo createLogInfo(char *message, char *directory, char *fileName);
+i8 GetFileFromFilePath(char *buffer, char *filePath, char *directory, size_t bufferSize);
 
 int main(int argc, char **argv)
 {
@@ -90,7 +99,7 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    GetDirFromFilePath(executableFileDirectory, executableFilePath);
+    GetDirFromFilePath(executableFileDirectory, executableFilePath, sizeof(executableFileDirectory));
     if (mergeDirFileName(logFilePath, executableFileDirectory, "log.txt", sizeof(logFilePath)) != 0)
     {
         printf("Error opening logger. Exiting program.\n");
@@ -105,8 +114,8 @@ int main(int argc, char **argv)
     }
     if (GetLastError() == 0)
     {
-        char logTitle[344] = {0};
-        snprintf(logTitle, sizeof(logTitle), "|%-40s|%-10s|%-10s|%-20s|%-256s|\n", "ERROR DESCRIPTION", "DATE", "TIME", "FILE NAME", "DIRECTORY");
+        char logTitle[LOG_PRINT_BUFFER_SIZE] = {0};
+        snprintf(logTitle, sizeof(logTitle), "|%-40s|%-10s|%-5s|%-40s|%-256s|\n", "ERROR DESCRIPTION", "DATE", "TIME", "FILE NAME", "DIRECTORY");
         DWORD logBytesWritten = 0;
         WriteFile(logHandle, logTitle, strlen(logTitle), &logBytesWritten, NULL);
         printLogLine(logHandle);
@@ -133,6 +142,12 @@ int main(int argc, char **argv)
         printf("3: Custom\n");
         printf("Enter option: ");
         fgets(option, sizeof(option), stdin);
+        if (clearStdin(option, sizeof(option)) != 0)
+        {
+            logInfo info = createLogInfo("Invalid buffer size. Exiting program.", "-", "-");
+            logger(logHandle, heapHandle, &info);
+            printf("Invalid buffer size. Exiting program");
+        }
     } while (strcmp(option, "1\n") && strcmp(option, "2\n") && strcmp(option, "3\n"));
 
     u8 selectDir = 1;
@@ -355,7 +370,7 @@ int main(int argc, char **argv)
     fileInfo *filteredFileData = (fileInfo *) HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(fileInfo) * fileIndex);
     if (filteredFileData == NULL)
     {
-        logInfo info = createLogInfo("Failed to allocate memory arena for filtered file data. Exiting program", "-", "-");
+        logInfo info = createLogInfo("Failed to allocate memory for filtered file data. Exiting program", "-", "-");
         logger(logHandle, heapHandle, &info);
         return -1;
     }
@@ -401,18 +416,15 @@ int main(int argc, char **argv)
                 failedSourceFiles[failedSourceCounter++] = filteredFileData[i].data.cFileName;
                 totalFailedCounter++;
                 char errorMessageBuffer[MESSAGE_BUFFER_SIZE] = {0};
-                logInfo info;
-                GetLocalTime(&info.time);
                 snprintf(errorMessageBuffer, sizeof(errorMessageBuffer), "%s %s", filteredFileData[i].data.cFileName, "could not be accessed.");
-                info.message = errorMessageBuffer;
-                info.directory = sourceDirectory;
-                info.fileName = filteredFileData[i].data.cFileName;
-                
+                logInfo info = createLogInfo(errorMessageBuffer, sourceDirectory, filteredFileData[i].data.cFileName);
                 logger(logHandle, heapHandle, &info);
             }
             else
             {
                 printf("Too many source files failed to be accesssed. Program exiting\n");
+                logInfo info = createLogInfo("Too many source files failed to be accessed. Exiting program.", sourceDirectory, "-");
+                logger(logHandle, heapHandle, &info);
                 return -1;
             }
         }
@@ -422,17 +434,23 @@ int main(int argc, char **argv)
             {
                 failedDestinationFiles[failedDestinationCounter++] = filteredFileData[i].data.cFileName;
                 totalFailedCounter++;
+                char errorMessageBuffer[MESSAGE_BUFFER_SIZE] = {0};
+                snprintf(errorMessageBuffer, sizeof(errorMessageBuffer), "%s %s", filteredFileData[i].data.cFileName, "could not be created.");
+                logInfo info = createLogInfo(errorMessageBuffer, destinationDirectory, filteredFileData[i].data.cFileName);
+                logger(logHandle, heapHandle, &info);
             }
             else
             {
                 printf("Too many destination files failed to be created. Program exiting\n");
+                logInfo info = createLogInfo("Too many destination files failed to be accessed. Exiting program.", destinationDirectory, filteredFileData[i].data.cFileName);
+                logger(logHandle, heapHandle, &info);
                 return -1;
             }
         }
         else
         {
-            snprintf(successfulFiles[successfulFileCounter].sourceFileName, sizeof(successfulFiles[successfulFileCounter].sourceFileName), "%s", sourceFileBuffer);
-            snprintf(successfulFiles[successfulFileCounter].destinationFileName, sizeof(successfulFiles[successfulFileCounter].destinationFileName), 
+            snprintf(successfulFiles[successfulFileCounter].sourceFilePath, sizeof(successfulFiles[successfulFileCounter].sourceFilePath), "%s", sourceFileBuffer);
+            snprintf(successfulFiles[successfulFileCounter].destinationFilePath, sizeof(successfulFiles[successfulFileCounter].destinationFilePath), 
                     "%s", destinationFileBuffer);
             successfulFileCounter++;
         }
@@ -458,13 +476,23 @@ int main(int argc, char **argv)
     
     for (u8 i = 0; i < successfulFileCounter; ++i)
     {
-        if (!CopyFile(successfulFiles[i].sourceFileName, successfulFiles[i].destinationFileName, TRUE))
+        if (!CopyFile(successfulFiles[i].sourceFilePath, successfulFiles[i].destinationFilePath, TRUE))
         {
+            char errorMessageBuffer[MESSAGE_BUFFER_SIZE] = {0};
             if (GetLastError() == ERROR_FILE_EXISTS)
             {
                 printf("File exists. ");
+                snprintf(errorMessageBuffer, sizeof(errorMessageBuffer), "%s %s", filteredFileData[i].data.cFileName, "could not be copied. It already exists.");
             }
-            printf("Error copying %s.\n", (successfulFiles + i)->sourceFileName);
+            else 
+            {
+                snprintf(errorMessageBuffer, sizeof(errorMessageBuffer), "%s %s", filteredFileData[i].data.cFileName, "could not be copied.");
+            }
+            char sourceFileName[MAX_PATH] = {0};
+            GetFileFromFilePath(sourceFileName, successfulFiles[i].sourceFilePath, sourceDirectory, sizeof(sourceFileName));
+            logInfo info = createLogInfo(errorMessageBuffer, sourceDirectory, sourceFileName);
+            logger(logHandle, heapHandle, &info);
+            printf("Error copying %s.\n", (successfulFiles + i)->sourceFilePath);
         }
         else 
         {
@@ -499,9 +527,9 @@ i8 validateDate(char *date, dateStruct *dateBuffer)
     };
 
     u8 leap = 0;
-    char day[3] = {0};
-    char month[3] = {0};
-    char year[5] = {0};
+    char day[DAY_DATE_BUFFER_SIZE] = {0};
+    char month[MONTH_DATE_BUFFER_SIZE] = {0};
+    char year[YEAR_DATE_BUFFER_SIZE] = {0};
 
     if (date[2] != '/' || date[5] != '/' || strlen(date) != 10)
     {
@@ -663,42 +691,65 @@ i8 mergeDirFileName(char *buffer, char *directory, char *fileName, u32 bufferSiz
     {
         return -1;
     }
+
+    if (strcmp(directory, "") == 0 || strcmp(fileName, "") == 0)
+    {
+        return -1;
+    }
     
     snprintf(buffer, bufferSize , "%s\\%s", directory, fileName);
 
     return 0;
 }
 
-i8 GetDirFromFilePath(char *buffer, char *filePath)
+i8 GetDirFromFilePath(char *buffer, char *filePath, size_t bufferSize)
 {
     if (strlen(filePath) < 3)
     {
         return -1;
     }
     size_t index = strlen(filePath) - 1;
-    while (filePath[index--] != '\\' && index >= 3) 
-        ;
     if (index < 1)
     {
         return -1;
     }
-    if (index == 1)
+    while (filePath[index--] != '\\' && index >= 3) 
+        ;
+    if (index == 1 && bufferSize >= (index + 3))
     {
         // + 3 only if the directory is the root drive
         snprintf(buffer, index + 3, "%s", filePath);
     }
-    else
+    else if (bufferSize >= (index + 2))
     {
         // + 2 beacuse converting from length to index and including the null terminator
         snprintf(buffer, index + 2, "%s", filePath);
     }
+    else 
+    {
+        return -1;
+    }
+    return 0;
+}
+
+i8 GetFileFromFilePath(char *buffer, char *filePath, char *directory, size_t bufferSize)
+{
+    u16 dirLength = strlen(directory);
+    if (dirLength > MAX_PATH)
+    {
+        return -1;
+    }
+    if (strlen(filePath) > MAX_PATH - 1)
+    {
+        return -1;
+    }
+    snprintf(buffer, bufferSize, "%s", (filePath + dirLength + 1));
     return 0;
 }
 
 // tokenize the strings so i can print them on multiple lines
 void logger(HANDLE logFileHandle, HANDLE heapHandle, logInfo *info)
 {
-    char lineBuffer[41] = {0};
     char *stringQueue[QUEUE_SIZE] = {0};
     char *tokens = HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(char) * 10000); 
     u16 numTokens = 0;
@@ -717,51 +768,122 @@ void logger(HANDLE logFileHandle, HANDLE heapHandle, logInfo *info)
         }
     }
 
+    char *tokenPointer = *stringQueue;
     u16 numTokensPrinted = 0;
     u8 firstLine = 1;
+    u8 fileNameIndex = 0;
+    size_t test = strlen(info->fileName) - 1;
 
-    while (numTokensPrinted != numTokens)
+    while (numTokensPrinted < numTokens || fileNameIndex <(strlen(info->fileName) - 1))
     {
-        memset(lineBuffer, 0, 41);
-        u16 totalLength = strlen(stringQueue[numTokensPrinted]);
-        u16 i = 1;
-        while (totalLength < sizeof(lineBuffer) && (numTokensPrinted + i) < numTokens)
-        {
-            totalLength += strlen(stringQueue[numTokensPrinted + i]) + 1;
-            ++i;
-        }
-        if ((numTokensPrinted + i) < numTokens)
-        {
-            --i;
-            totalLength -= strlen(stringQueue[numTokensPrinted + i]) + 1;
-        }
+        char lineBuffer[41] = {0};
+        char fileNameBuffer[41] ={0};
+        u16 tokensInBuffer = 1;
 
-        u8 lineBufferIndex = 0;
-        for (u16 j = 0; j < i; ++j)
+        if (numTokensPrinted < numTokens)
         {
-            for (u8 l = 0; l < strlen(stringQueue[numTokensPrinted + j]); ++l)
+            u16 totalLength = strlen(tokenPointer);
+            if (totalLength > (sizeof(lineBuffer) - 1))
             {
-                lineBuffer[lineBufferIndex++] = stringQueue[numTokensPrinted + j][l];
-            }   
-            if ((numTokensPrinted + j) != (numTokens - 1))
+                snprintf(lineBuffer, sizeof(lineBuffer), "%s", tokenPointer);
+                tokenPointer += 40;
+            }
+            else
             {
-                lineBuffer[lineBufferIndex++] = ' ';
+                while (totalLength < (sizeof(lineBuffer) - 1) && (numTokensPrinted + tokensInBuffer) < numTokens)
+                {
+                    tokenPointer = stringQueue[tokensInBuffer + numTokensPrinted];
+                    totalLength += strlen(tokenPointer) + 1;
+                    ++tokensInBuffer;
+                }
+                if (totalLength > (sizeof(lineBuffer) - 1))
+                {
+                    --tokensInBuffer;
+                    totalLength -= strlen(tokenPointer) + 1;
+                }
+
+                u8 lineBufferIndex = 0;
+                for (u16 tokenIndex = 0; tokenIndex < tokensInBuffer; ++tokenIndex)
+                {
+                    i32 tokenLength = strlen(stringQueue[numTokensPrinted + tokenIndex]) % 40;
+                    for (u8 c = 0; c < tokenLength; ++c)
+                    {
+                        lineBuffer[lineBufferIndex++] = stringQueue[numTokensPrinted + tokenIndex][c + (strlen(stringQueue[numTokensPrinted + tokenIndex]) / 40) * 40];
+                    }   
+                    if ((numTokensPrinted + tokenIndex) != (numTokens - 1) && tokenIndex != (tokensInBuffer - 1))
+                    {
+                        lineBuffer[lineBufferIndex++] = ' ';
+                    }
+                    if (totalLength == (sizeof(lineBuffer) - 1))
+                    {
+                        lineBuffer[sizeof(lineBuffer) - 1] = '\0';
+                    }
+                }
+                numTokensPrinted += tokensInBuffer;
             }
         }
-        numTokensPrinted += i;
-        char logText[344] = {0};
+
+        for (int j = 0; j < 40 && info->fileName[fileNameIndex] != '\0'; ++j)
+        {
+            fileNameBuffer[j] = info->fileName[fileNameIndex];
+            ++fileNameIndex;
+        }
+
+        char logText[LOG_PRINT_BUFFER_SIZE] = {0};
         if (firstLine)
         {
             char dateBuffer[DATE_BUFFER_SIZE] = {0}; 
-            snprintf(logText, sizeof(logText), "|%-40s|%2d/%2d/%4d|%2d:%-7d|%-20s|%-256s|\n", lineBuffer, info->time.wDay, info->time.wMonth, info->time.wYear, info->time.wHour, 
-                    info->time.wMinute, info->fileName, info->directory);
+            char dayBuffer[DAY_DATE_BUFFER_SIZE] = {0};
+            char monthBuffer[MONTH_DATE_BUFFER_SIZE] = {0};
+            
+            char timeBuffer[TIME_BUFFER_SIZE] = {0};
+            char hourBuffer[HOUR_BUFFER_SIZE] = {0};
+            char minuteBuffer[MINUTE_BUFFER_SIZE] = {0};
+
+            if (info->time.wDay < 10)
+            {
+                snprintf(dayBuffer, sizeof(dayBuffer), "0%d", info->time.wDay);
+            }
+            else 
+            {
+                snprintf(dayBuffer, sizeof(dayBuffer), "%d", info->time.wDay);
+            }
+            if (info->time.wMonth < 10)
+            {
+                snprintf(monthBuffer, sizeof(monthBuffer), "0%d", info->time.wMonth);
+            }
+            else 
+            {
+                snprintf(monthBuffer, sizeof(monthBuffer), "%d", info->time.wMonth);
+            }
+            snprintf(dateBuffer, sizeof(dateBuffer), "%s/%s/%d", dayBuffer, monthBuffer, info->time.wYear);
+            
+            if (info->time.wMinute < 10 )
+            {
+                snprintf(minuteBuffer, sizeof(minuteBuffer), "0%d", info->time.wMinute);
+            }
+            else
+            {
+                snprintf(minuteBuffer, sizeof(minuteBuffer), "%d", info->time.wMinute);
+            }
+            if (info->time.wHour < 10)
+            {
+                snprintf(hourBuffer, sizeof(hourBuffer), "0%d", info->time.wHour);
+            }
+            else 
+            {
+                snprintf(hourBuffer, sizeof(hourBuffer), "%d", info->time.wHour);
+            }
+            snprintf(timeBuffer, sizeof(timeBuffer), "%s:%s", hourBuffer, minuteBuffer);
+
+            snprintf(logText, sizeof(logText), "|%-40s|%-10s|%-5s|%-40s|%-256s|\n", lineBuffer, dateBuffer, timeBuffer, fileNameBuffer, info->directory);
             DWORD logBytesWritten = 0;
             WriteFile(logFileHandle, logText, strlen(logText), &logBytesWritten, NULL);
             firstLine = 0;
         }
         else
         {
-            snprintf(logText, sizeof(logText), "|%-40s|%-10s|%-10s|%-20s|%-256s|\n", lineBuffer, "", "", "", "");
+            snprintf(logText, sizeof(logText), "|%-40s|%-10s|%-5s|%-40s|%-256s|\n", lineBuffer, "", "", fileNameBuffer, "");
             DWORD logBytesWritten = 0;
             WriteFile(logFileHandle, logText, strlen(logText), &logBytesWritten, NULL);
         }
@@ -774,8 +896,8 @@ void logger(HANDLE logFileHandle, HANDLE heapHandle, logInfo *info)
 
 void printLogLine(HANDLE logFileHandle)
 {
-    char lineArray[344] = {0};
-    memset(lineArray, '-', 344);
+    char lineArray[LOG_PRINT_BUFFER_SIZE] = {0};
+    memset(lineArray, '-', sizeof(lineArray));
     DWORD bytesWritten = 0;
     lineArray[sizeof(lineArray) - 2] = '\n';
     lineArray[sizeof(lineArray) - 1] = '\0';
@@ -791,4 +913,16 @@ logInfo createLogInfo(char *message, char *directory, char *fileName)
     info.fileName = fileName;
     GetLocalTime(&info.time);
     return info;
+}
+
+i8 clearStdin(char *buffer, size_t bufferSize)
+{
+    if (bufferSize < 2)
+    {
+        return -1;
+    }
+    i32 c;
+    while (buffer[bufferSize - 2] != '\n' && (c = getchar()) != '\n' && c != EOF)
+        ;
+    return 0;
 }
