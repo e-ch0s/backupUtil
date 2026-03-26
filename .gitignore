@@ -57,3 +57,4 @@ dkms.conf
 /test/
 *.txt
 /test2/
+/build/
