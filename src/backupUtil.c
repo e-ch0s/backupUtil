@@ -142,11 +142,12 @@ int main(int argc, char **argv)
         printf("3: Custom\n");
         printf("Enter option: ");
         fgets(option, sizeof(option), stdin);
-        if (clearStdin(option, sizeof(option)) != 0)
+        if (clearStdin(option, sizeof(option)))
         {
-            logInfo info = createLogInfo("Invalid buffer size. Exiting program.", "-", "-");
+            logInfo info = createLogInfo("Invalid input buffer size. Exiting program.", "-", "-");
             logger(logHandle, heapHandle, &info);
-            printf("Invalid buffer size. Exiting program");
+            printf("Invalid input buffer size. Exiting program");
+            return -1;
         }
     } while (strcmp(option, "1\n") && strcmp(option, "2\n") && strcmp(option, "3\n"));
 
@@ -175,10 +176,24 @@ int main(int argc, char **argv)
         {
             printf("Enter source directory:\n");
             fgets(sourceDirectory, sizeof(sourceDirectory), stdin);
+            if (clearStdin(sourceDirectory, sizeof(sourceDirectory)))
+            {
+                logInfo info = createLogInfo("Invalid input buffer size. Exiting program.", "-", "-");
+                logger(logHandle, heapHandle, &info);
+                printf("Invalid input buffer size. Exiting program");
+                return -1;
+            }
             removeTrailingByte(sourceDirectory, "\n");
             printf("Is \"%s\" the source directory?\n", sourceDirectory);
             printf("Select Y/N:\n");
             fgets(selectDirOption, sizeof(selectDirOption), stdin);
+            if (clearStdin(selectDirOption, sizeof(selectDirOption)))
+            {
+                logInfo info = createLogInfo("Invalid input buffer size. Exiting program.", "-", "-");
+                logger(logHandle, heapHandle, &info);
+                printf("Invalid input buffer size. Exiting program");
+                return -1;
+            }
             if (strcmp(selectDirOption, "Y\n") == 0 || strcmp(selectDirOption, "y\n") == 0) 
             {
                 if (strcmp(destinationDirectory, sourceDirectory) == 0)
@@ -223,10 +238,24 @@ int main(int argc, char **argv)
         {
             printf("Enter destination directory:\n");
             fgets(destinationDirectory, sizeof(destinationDirectory), stdin);
+            if (clearStdin(destinationDirectory, sizeof(destinationDirectory)))
+            {
+                logInfo info = createLogInfo("Invalid input buffer size. Exiting program.", "-", "-");
+                logger(logHandle, heapHandle, &info);
+                printf("Invalid input buffer size. Exiting program");
+                return -1;
+            }
             removeTrailingByte(destinationDirectory, "\n");
             printf("Is \"%s\" the destination directory?\n", destinationDirectory);
             printf("Select Y/N:\n");
             fgets(selectDirOption, sizeof(selectDirOption), stdin);
+            if (clearStdin(selectDirOption, sizeof(selectDirOption)))
+            {
+                logInfo info = createLogInfo("Invalid input buffer size. Exiting program.", "-", "-");
+                logger(logHandle, heapHandle, &info);
+                printf("Invalid input buffer size. Exiting program");
+                return -1;
+            }
             if (strcmp(selectDirOption, "Y\n") == 0 || strcmp(selectDirOption, "y\n") == 0) 
             {
                 if (strcmp(destinationDirectory, sourceDirectory) == 0)
@@ -271,13 +300,34 @@ int main(int argc, char **argv)
         {
             printf("Enter source directory:\n");
             fgets(sourceDirectory, sizeof(sourceDirectory), stdin);
+            if (clearStdin(sourceDirectory, sizeof(sourceDirectory)))
+            {
+                logInfo info = createLogInfo("Invalid input buffer size. Exiting program.", "-", "-");
+                logger(logHandle, heapHandle, &info);
+                printf("Invalid input buffer size. Exiting program");
+                return -1;
+            }
             removeTrailingByte(sourceDirectory, "\n");
             printf("Enter destination directory:\n");
             fgets(destinationDirectory, sizeof(destinationDirectory), stdin);
+            if (clearStdin(destinationDirectory, sizeof(destinationDirectory)))
+            {
+                logInfo info = createLogInfo("Invalid input buffer size. Exiting program.", "-", "-");
+                logger(logHandle, heapHandle, &info);
+                printf("Invalid input buffer size. Exiting program");
+                return -1;
+            }
             removeTrailingByte(destinationDirectory, "\n");
             printf("Is \"%s\" the source directory and \"%s\" the destination directory?\n", sourceDirectory, destinationDirectory);
             printf("Select Y/N:\n");
             fgets(selectDirOption, sizeof(selectDirOption), stdin);
+            if (clearStdin(selectDirOption, sizeof(selectDirOption)))
+            {
+                logInfo info = createLogInfo("Invalid input buffer size. Exiting program.", "-", "-");
+                logger(logHandle, heapHandle, &info);
+                printf("Invalid input buffer size. Exiting program");
+                return -1;
+            }
             if (strcmp(selectDirOption, "Y\n") == 0 || strcmp(selectDirOption, "y\n") == 0) 
             {
                 if (strcmp(destinationDirectory, sourceDirectory) == 0)
@@ -350,6 +400,13 @@ int main(int argc, char **argv)
         {
             printf("Enter start date (DD/MM/YYYY):\n");
             fgets(startDate, sizeof(startDate), stdin);
+            if (clearStdin(startDate, sizeof(startDate)))
+            {
+                logInfo info = createLogInfo("Invalid input buffer size. Exiting program.", "-", "-");
+                logger(logHandle, heapHandle, &info);
+                printf("Invalid input buffer size. Exiting program");
+                return -1;
+            }
             removeTrailingByte(startDate, "\n");
         } while(validateDate(startDate, &start) != 0);
 
@@ -357,6 +414,13 @@ int main(int argc, char **argv)
         {
             printf("Enter end date (DD/MM/YYYY):\n");
             fgets(endDate, sizeof(endDate), stdin);
+            if (clearStdin(endDate, sizeof(endDate)))
+            {
+                logInfo info = createLogInfo("Invalid input buffer size. Exiting program.", "-", "-");
+                logger(logHandle, heapHandle, &info);
+                printf("Invalid input buffer size. Exiting program");
+                return -1;
+            }
             removeTrailingByte(endDate, "\n");
         } while (validateDate(endDate, &end) != 0);
         
@@ -465,6 +529,13 @@ int main(int argc, char **argv)
     printf("Do you want to proceed?");
     printf("Select Y/N:\n");
     fgets(proceedOption, sizeof(proceedOption), stdin);
+    if (clearStdin(proceedOption, sizeof(proceedOption)))
+    {
+        logInfo info = createLogInfo("Invalid input buffer size. Exiting program.", "-", "-");
+        logger(logHandle, heapHandle, &info);
+        printf("Invalid input buffer size. Exiting program");
+        return -1;
+    }
     } while (strcmp(proceedOption, "Y\n") && strcmp(proceedOption, "y\n") && strcmp(proceedOption, "N\n") && strcmp(proceedOption, "n\n"));
 
     if (strcmp(proceedOption, "N\n") == 0 || strcmp(proceedOption, "n\n") == 0)
@@ -922,7 +993,7 @@ i8 clearStdin(char *buffer, size_t bufferSize)
         return -1;
     }
     i32 c;
-    while (buffer[bufferSize - 2] != '\n' && (c = getchar()) != '\n' && c != EOF)
+    while (!(buffer[bufferSize - 2] == '\n' || buffer[bufferSize - 2] == '\0')  && (c = getchar()) != '\n' && c != EOF)
         ;
     return 0;
 }
