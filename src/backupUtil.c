@@ -379,7 +379,7 @@ int main(int argc, char **argv)
         printf("Too many files\n");
         printf("Do you want to continue?\n");
     }
-    for (u8 i = 0; i < fileIndex; ++i)
+    for (u16 i = 0; i < fileIndex; ++i)
     {
         SYSTEMTIME time = {0};
         FileTimeToSystemTime(&fileData[i].data.ftCreationTime, &time);
@@ -440,7 +440,7 @@ int main(int argc, char **argv)
     }
 
     size_t filteredFileIndex = 0;
-    for (u8 i = 0; i < fileIndex; ++i)
+    for (u16 i = 0; i < fileIndex; ++i)
     {
         if (fileTimeFilter(start, fileData[i].time) >= CREATED_ON_DATE && fileTimeFilter(end, fileData[i].time) <= CREATED_ON_DATE 
                 && filteredFileIndex < fileIndex && strcmp(fileData[i].data.cFileName, ".") && strcmp(fileData[i].data.cFileName, ".."))
@@ -454,7 +454,7 @@ int main(int argc, char **argv)
 
     quicksort(filteredFileData, 0, filteredFileIndex - 1);
 
-    for(u8 i = 0; i < MIN(filteredFileIndex, MAX_PRINT_LENGTH); ++i)
+    for(u16 i = 0; i < MIN(filteredFileIndex, MAX_PRINT_LENGTH); ++i)
     {
         printf("File name: %10s Date created: %d/%d/%d\n", filteredFileData[i].data.cFileName, filteredFileData[i].time.wDay, 
                 filteredFileData[i].time.wMonth, filteredFileData[i].time.wYear);
@@ -468,7 +468,7 @@ int main(int argc, char **argv)
     copyFileNames *successfulFiles =  (copyFileNames *) HeapAlloc(heapHandle, HEAP_ZERO_MEMORY, sizeof(copyFileNames) * filteredFileIndex);
     size_t successfulFileCounter = 0;
 
-    for (u8 i = 0; i < filteredFileIndex; ++i)
+    for (u16 i = 0; i < filteredFileIndex; ++i)
     {
         char sourceFileBuffer[MAX_PATH] = {0};
         char destinationFileBuffer[MAX_PATH] = {0};
@@ -545,7 +545,7 @@ int main(int argc, char **argv)
 
     size_t copiedFileCounter = 0;
     
-    for (u8 i = 0; i < successfulFileCounter; ++i)
+    for (u16 i = 0; i < successfulFileCounter; ++i)
     {
         if (!CopyFile(successfulFiles[i].sourceFilePath, successfulFiles[i].destinationFilePath, TRUE))
         {
